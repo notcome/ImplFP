@@ -1,5 +1,5 @@
 import Data.Monoid
-import Language
+import Language.Core.ADT
 
 type Line      = Name
 type MultiLine = [Line]
@@ -41,7 +41,7 @@ printExpr fx@(EApp _ _) =
         unpack (EApp f x) = x:(unpack f)
         unpack exp        = [exp]
 
-printExpr (ELet isRec defs exp) = 
+printExpr (ELet isRec defs exp) =
   let letName  = if isRec then "letrec " else "let "
       defsPart = concatMap printDef defs
       expPart  = indentWithPrefix "in " $ printExpr exp
@@ -57,7 +57,7 @@ printExpr (ECase exp alters) =
           in if length exp' == 1
              then singleton $ "case " <> head exp' <> " of"
              else indentWithPrefix "case " exp' <> singleton "of"
-        printAlter (tag, names, exp) = 
+        printAlter (tag, names, exp) =
           let match = unwords $ (show tag):names
               exp' = printExpr exp
           in indentWithPrefix (match <> " -> ") exp'
@@ -110,7 +110,7 @@ yComb = ELam ["f"] (EApp part part)
 {-
 :  === Pack{0, 2}
 [] === Pack{1, 0}
-length (: 1 (: 2 (: 3 [])))  
+length (: 1 (: 2 (: 3 [])))
 -}
 appLen = EApp (EVar "length") list
   where

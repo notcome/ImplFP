@@ -7,9 +7,7 @@ import Control.Monad.State          (State)
 import qualified Text.Parsec        as P
 import qualified Text.Parsec.Indent as PI
 
-import Language
-
-import System.IO.Unsafe
+import Language.Core.ADT
 
 type IParser a = P.ParsecT String () (State P.SourcePos) a
 iparse :: IParser a -> String -> Either P.ParseError a
