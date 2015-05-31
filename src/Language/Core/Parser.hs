@@ -4,10 +4,12 @@
 module Language.Core.Parser where
 
 import Data.Maybe                   (isJust)
-import Control.Monad.State          (State)
+import Control.Monad.State
 
 import qualified Text.Parsec        as P
 import qualified Text.Parsec.Indent as PI
+
+import Text.Parsec.Prim (getPosition)
 
 import Language.Core.ADT
 
@@ -17,19 +19,21 @@ iparse rule text = PI.runIndent "(source)" $ P.runParserT rule () "(source)" tex
 
 parse rule text = P.parse rule "(source)" text
 
-spaces = P.spaces >> PI.indented >> P.spaces
---spaces = P.spaces >> PI.indented
---spaces = PI.indented >> P.spaces
+{-
+ - Atoms = EVar Name
+ -       | ENum Int
+ -       | ECon Int Int
+ -}
 
-var = do name <- P.many1 P.lower
-         return $ EVar name
+lowers = P.many1 P.lower
+var = EVar <$> lowers
 
-num = do neg <- fmap isJust $ P.optionMaybe $ P.char '-'
-         spaces
+num = do neg <- P.optionMaybe $ P.char '-'
          num <- parseNum
-         return $ ENum $ if neg then -num else num
+         return $ ENum $ case neg of
+                           Nothing -> num
+                           Just _  -> -num
 
--- identifier starting with upper letter must be a constructor in Haskell
 con = do P.string "Pack{" >> spaces
          id    <- parseNum
          spaces >> P.char ',' >> spaces
@@ -37,43 +41,65 @@ con = do P.string "Pack{" >> spaces
          spaces >> P.char '}'
          return $ ECon id arity
 
-app = do fn   <- atomicCore
-         spaces
-         --args <- P.endBy (PI.indented >> atomicCore) (PI.indented >> P.spaces)
-         args <- P.sepBy atomicCore spaces'
-         if length args == 0
-         then return fn
-         else return $ foldl EApp fn args
+spaces = P.many $ P.char ' '
 
-caseBlock = do block <- PI.withBlock ECase caseExpr caseBranch
-               spaces
-               return block
+{-
+ - Complex = EApp (Expr a) (Expr a)
+ -         | ECase
+ -             (Expr a)
+ -             [Alter a]
+ -}
+
+biAp f o a b = f a `o` f b
+
+checkBlock = do
+  s <- get
+  p <- getPosition
+  if biAp P.sourceColumn (<) s p
+    then return ()
+    else fail "out of current block"
+
+app = PI.withPos $ do
+  fn <- atomicCore
+  P.spaces
+  args <- P.endBy (checkBlock >> atomicCore) (P.spaces)
+  case args of
+    [] -> return fn
+    _  -> return $ foldl EApp fn args
+
+caseBlock = PI.withBlock ECase caseExpr caseBranch
   where
-    caseExpr = do P.string "case" >> spaces
+    caseExpr = do P.string "case" >> P.spaces
                   expr <- atomicCore
-                  spaces >> P.string "of" >> spaces
+                  P.spaces >> P.string "of" >> P.spaces
                   return expr
+
     caseBranch = do
       id    <- parseNum
-      P.spaces
-      binds <- P.endBy var spaces
+      spaces
+      binds <- P.endBy lowers spaces
       spaces >> P.string "->" >> spaces
       expr  <- core
       P.spaces
-      return $ (id, binds, expr)
+      return (id, binds, expr)
 
 atom = do P.char '(' >> spaces
           expr <- core
           spaces >> P.char ')'
           return expr
 
-atomicCore = P.choice [atom, con, var, num]
-core       = P.choice [caseBlock, app]
+atomicCore = choiceWithPos [atom, con, var, num]
+core       = choiceWithPos [caseBlock, app]
+
+choiceWithPos ps = do
+  a <- get
+  let ps' = map (put a >>) ps
+  P.choice ps'
 
 parseNum = readNum <$> P.many1 P.digit
   where readNum x = (read x) :: Int
 
 lenCore = iparse caseBlock $ unlines [
     "case l of"
-  , "  0 x xs -> add 1"-- (length xs)"
+  , "  0 x xs -> add 1 (length xs)"
   , "  1 -> 0"]
