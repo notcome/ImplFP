@@ -1,3 +1,5 @@
+module Language.Core.Printer where
+
 import Data.Monoid
 import Language.Core.ADT
 

@@ -1,4 +1,4 @@
-module Language where
+module Language.Core.ADT where
 
 import Prelude hiding (print)
 import Data.Monoid
@@ -35,7 +35,7 @@ type CoreAlt = Alter Name
 isAtomicExpr :: Expr a -> Bool
 isAtomicExpr (EVar _)   = True
 isAtomicExpr (ENum _)   = True
-isAtomicExpr (ECon _ _) = True 
+isAtomicExpr (ECon _ _) = True
 isAtomicExpr _          = False
 
 type Program a   = [ScDefn a]

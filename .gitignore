@@ -7,3 +7,4 @@
 # Cabal Level Garbages
 **/.cabal-sandbox
 cabal.sandbox.config
+dist/**

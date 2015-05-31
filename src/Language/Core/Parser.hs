@@ -1,6 +1,8 @@
 {-# LANGUAGE NoMonomorphismRestriction #-}
 {-# LANGUAGE FlexibleContexts          #-}
 
+module Language.Core.Parser where
+
 import Data.Maybe                   (isJust)
 import Control.Monad.State          (State)
 
