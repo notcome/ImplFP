@@ -14,6 +14,7 @@ import Text.Parsec.Prim (getPosition)
 import Language.Core.ADT
 
 type IParser a = P.ParsecT String () (State P.SourcePos) a
+
 iparse :: IParser a -> String -> Either P.ParseError a
 iparse rule text = PI.runIndent "(source)" $ P.runParserT rule () "(source)" text
 
@@ -25,7 +26,6 @@ parse rule text = P.parse rule "(source)" text
  -       | ECon Int Int
  -}
 
-lowers = P.many1 P.lower
 var = EVar <$> lowers
 
 num = do neg <- P.optionMaybe $ P.char '-'
@@ -41,10 +41,14 @@ con = do P.string "Pack{" >> spaces
          spaces >> P.char '}'
          return $ ECon id arity
 
-spaces = P.many $ P.char ' '
+
 
 {-
  - Complex = EApp (Expr a) (Expr a)
+ -         | ELet
+ -             IsRec
+ -             [(a, Expr a)]
+ -             (Expr a)
  -         | ECase
  -             (Expr a)
  -             [Alter a]
@@ -83,6 +87,8 @@ caseBlock = PI.withBlock ECase caseExpr caseBranch
       P.spaces
       return (id, binds, expr)
 
+
+-- Main
 atom = do P.char '(' >> spaces
           expr <- core
           spaces >> P.char ')'
@@ -91,14 +97,20 @@ atom = do P.char '(' >> spaces
 atomicCore = choiceWithPos [atom, con, var, num]
 core       = choiceWithPos [caseBlock, app]
 
+
+-- Fix "bugs"
 choiceWithPos ps = do
   a <- get
   let ps' = map (put a >>) ps
   P.choice ps'
 
+-- Utilities
+lowers = P.many1 P.lower
+spaces = P.many $ P.char ' '
 parseNum = readNum <$> P.many1 P.digit
   where readNum x = (read x) :: Int
 
+-- Test Cases
 lenCore = iparse caseBlock $ unlines [
     "case l of"
   , "  0 x xs -> add 1 (length xs)"
