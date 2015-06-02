@@ -4,12 +4,13 @@
 module Language.Core.Parser where
 
 import Data.Maybe                   (isJust)
+import Text.Parsec                  ((<|>))
+import Text.Parsec.Prim             (getPosition)
+
 import Control.Monad.State
 
 import qualified Text.Parsec        as P
 import qualified Text.Parsec.Indent as PI
-
-import Text.Parsec.Prim (getPosition)
 
 import Language.Core.ADT
 
@@ -71,6 +72,25 @@ app = PI.withPos $ do
     [] -> return fn
     _  -> return $ foldl EApp fn args
 
+letBlock = PI.withPos $ do
+    (isRec, defs) <- letDefs
+    value         <- PI.checkIndent >> letValue
+    return $ ELet isRec defs value
+  where
+    letSym = do
+      symbol <- P.string "letrec" <|> P.string "let"
+      P.spaces
+      if symbol == "let"
+      then return False
+      else return True
+    letDef = do
+      bind  <- lowers
+      P.spaces >> P.char '=' >> P.spaces
+      value <- core
+      return (bind, value)
+    letDefs = PI.withBlock (,) letSym letDef
+    letValue = P.string "in" >> P.spaces >> core
+
 caseBlock = PI.withBlock ECase caseExpr caseBranch
   where
     caseExpr = do P.string "case" >> P.spaces
@@ -87,7 +107,6 @@ caseBlock = PI.withBlock ECase caseExpr caseBranch
       P.spaces
       return (id, binds, expr)
 
-
 -- Main
 atom = do P.char '(' >> spaces
           expr <- core
@@ -95,8 +114,10 @@ atom = do P.char '(' >> spaces
           return expr
 
 atomicCore = choiceWithPos [atom, con, var, num]
-core       = choiceWithPos [caseBlock, app]
-
+core       = choiceWithPos [ caseBlock
+                           , letBlock
+                           , app
+                           ]
 
 -- Fix "bugs"
 choiceWithPos ps = do
@@ -115,3 +136,20 @@ lenCore = iparse caseBlock $ unlines [
     "case l of"
   , "  0 x xs -> add 1 (length xs)"
   , "  1 -> 0"]
+
+doubleA = iparse letBlock $ unlines [
+    "let a = 3"
+  , "in add a a"
+  ]
+
+bAndC = iparse letBlock $ unlines [
+    "let a = let b = 3"
+  , "            c = 4"
+  , "        in add b c"
+  , "in add a a"]
+
+letRecAdd = iparse letBlock $ unlines [
+    "letrec a = add b c"
+  , "       b = 3"
+  , "       c = 4"
+  , "in add a"]
