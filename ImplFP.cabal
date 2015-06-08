@@ -19,6 +19,7 @@ library
   hs-source-dirs: src
   exposed-modules:
     Language.Core.ADT
+    Language.Core.DSL
     Language.Core.Parser
     Language.Core.Printer
 

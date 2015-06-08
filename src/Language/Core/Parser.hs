@@ -42,8 +42,6 @@ con = do P.string "Pack{" >> spaces
          spaces >> P.char '}'
          return $ ECon id arity
 
-
-
 {-
  - Complex = EApp (Expr a) (Expr a)
  -         | ELet
