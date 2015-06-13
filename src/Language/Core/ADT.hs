@@ -1,6 +1,8 @@
+{-# LANGUAGE DeriveDataTypeable #-}
+
 module Language.Core.ADT where
 
-import Prelude hiding (print)
+import Data.Data
 import Data.Monoid
 
 data Expr a = EVar Name
@@ -15,7 +17,7 @@ data Expr a = EVar Name
                 (Expr a)
                 [Alter a]
             | ELam [a] (Expr a)
-            deriving (Eq, Show)
+            deriving (Eq, Show, Data)
 
 type CoreExpr = Expr Name
 type Name     = String

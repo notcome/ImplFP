@@ -24,9 +24,10 @@ library
     Language.Core.Printer
 
   build-depends:
-    base    >=4.8 && <4.9,
-    mtl     >=2.2 && <2.3,
-    parsec  >=3.1 && <3.2,
-    indents >=0.3 && <0.4
+    base             >=4.8 && <4.9,
+    mtl              >=2.2 && <2.3,
+    parsec           >=3.1 && <3.2,
+    indents          >=0.3 && <0.4,
+    template-haskell >= 2.10.0.0 && < 2.11
 
   default-language: Haskell2010
