@@ -91,7 +91,7 @@ letBlock = PI.withPos $ do
 
 caseBlock = PI.withBlock ECase caseExpr caseBranch
   where
-    caseExpr = do P.string "case" >> P.spaces
+    caseExpr = do P.try $ P.string "case" >> P.spaces
                   expr <- atomicCore
                   P.spaces >> P.string "of" >> P.spaces
                   return expr

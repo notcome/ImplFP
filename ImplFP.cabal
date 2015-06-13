@@ -21,6 +21,7 @@ library
     Language.Core.ADT
     Language.Core.DSL
     Language.Core.Parser
+    Language.Core.Prelude
     Language.Core.Printer
 
   build-depends:
