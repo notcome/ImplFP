@@ -1,116 +1,59 @@
-{-# LANGUAGE FlexibleContexts #-}
-
 module Language.Core.Printer where
 
-import Data.Monoid
-import Control.Monad.Writer
+import Text.PrettyPrint.Leijen
+import Prelude hiding ((<$>))
+
 import Language.Core.ADT
 
-type Line      = Name
+atom :: CoreExpr -> Doc
+atom (EVar v) = text v
+atom (ENum n) = text $ show n
+atom (ECon tag arity) = text "Pack" <> braces (int tag <> text ", " <> int arity)
+atom x = parens $ expr x
 
-data MultiLine = ML [Line] deriving Show
-singleton = ML
+expr :: CoreExpr -> Doc
+expr (ELet isRec binds exp) = let
+    let_   = text $ if isRec then "letrec" else "let"
+    binds' = align $ vsep $ map bind binds
+    in_    = text "in"
+    exp'   = expr exp
+  in align (let_ <+> binds' <$> in_ <+> exp')
+  where bind (name, exp) = text name <+> text "=" <+> expr exp
 
-same' :: [MultiLine] -> MultiLine
-same' xs' = let
-    xs = map (\(ML x) -> x) xs'
-  in ML $ foldr (<>) [] xs
+expr (ECase exp alters) = let
+    exp'    = atom exp
+    match   = text "case" <+> exp' <+> text "of"
+    alters' = vsep $ map (indent 2 . alter) alters
+  in align (match <$> alters')
+  where alter (tag, names, exp) = let
+            tag'   = angles $ int tag
+            names' = hsep $ map text names
+            exp'   = expr exp
+          in if null names
+             then tag'            <+> text "->" <+> exp'
+             else tag' <+> names' <+> text "->" <+> exp'
 
-same :: [MultiLine] -> MultiLine
-same xs' = let
-    xs = map (\(ML x) -> x) xs'
-    collapsable = (== []) $ filter (\x -> length x > 1) xs
-  in if collapsable
-     then ML [unwords $ map head xs]
-     else ML $ foldr (<>) [] xs
+expr (ELam names exp) = let
+    names' = hsep $ map text names
+    quant  = text "\\" <> names' <> text "."
+    exp'   = expr exp
+  in align (quant <+> exp')
 
-instance Monoid MultiLine where
-  mempty      = ML []
-  mappend (ML []) bs = bs
-  mappend as (ML []) = as
-  mappend (ML as) (ML bs) = let
-      (a:as') = reverse as
-      as''    = reverse as'
-      abs     = indentWithPrefix (a <> " ") bs
-    in ML (as'' <> abs)
-
-indentWithPrefix :: Line -> [Line] -> [Line]
-indentWithPrefix prefix lines =
-  let (x:xs) = lines
-      first  = prefix <> x
-      col    = length prefix
-      indent = replicate col ' '
-      rest   = map (indent <>) xs
-  in first:rest
-
-atomize xs = ML ["("] <> xs <> ML [")"]
-
-writ str = tell $ ML [str]
-
-printExpr :: CoreExpr -> MultiLine
-printExpr (EApp f x)             = printApp  $ EApp f x
-printExpr (ELet isRec binds exp) = printLet  isRec binds exp
-printExpr (ECase exp alters)     = printCase exp alters
-printExpr (ELam names exp)       = printLam  names exp
-printExpr x                      = ML [printAtom x]
-
-printExpr' x
-  | isAtomicExpr x = printExpr x
-  | otherwise      = atomize $ printExpr x
-
-uncurryApp fx = let f:xs = reverse $ unpack fx in (f, xs)
+expr fx@(EApp _ _) = let
+    (f, xs)   = uncurryApp fx
+    f'        = atom f
+    xs'       = align $ sep $ map atom xs
+  in align $ f' <+> xs'
   where
-    unpack (EApp f x) = x:(unpack f)
-    unpack exp        = [exp]
+    uncurryApp fx = uncons $ reverse $ unpack fx
+      where
+        uncons (x:xs)     = (x, xs)
+        unpack (EApp f x) = x:(unpack f)
+        unpack x          = [x]
 
-printApp fx = let
-    (f, xs) = uncurryApp fx
-  in execWriter $ do
-    tell $ printExpr f
-    tell $ same $ map printExpr' xs
+expr x = atom x
 
-printLet isRec binds exp = let
-    binds' = execWriter $ printBinds isRec binds
-    exp'   = execWriter $ printIn exp
-  in same' [binds', exp']
-  where
-    printBind (name, exp) = do
-      writ name
-      writ "="
-      tell $ printExpr exp
-    printBinds isRec binds = do
-      writ $ if isRec then "letrec" else "let"
-      tell $ same' $ map (execWriter . printBind) binds
-    printIn exp = do writ "in"
-                     tell $ printExpr exp
-
-printCase exp alters = let
-    caseOf  = execWriter $ printCaseOf exp
-    alters' = execWriter $ do
-      writ " "
-      tell $ same' $ map (execWriter . printAlter) alters
-  in same' [caseOf, alters']
-  where
-    printCaseOf exp = do
-      writ "case"
-      tell $ printExpr exp
-      writ "of"
-    printAlter (tag, names, exp) = do
-      writ $ show tag
-      mapM writ names
-      writ "->"
-      tell $ printExpr exp
-
-printLam names exp = execWriter $ do
-  writ "\\"
-  mapM writ names
-  writ "."
-  tell $ printExpr exp
-
-printAtom :: CoreExpr -> String
-printAtom (EVar v) = v
-printAtom (ENum n) = show n
-printAtom (ECon tag arity) = "Pack{" <> show tag <> ", " <> show arity <> "}"
+putExpr e = (putDoc $ expr e) >> putStrLn ""
 
 {-
 let a = let b = 3
