@@ -43,7 +43,7 @@ expr fx@(EApp _ _) = let
     (f, xs)   = uncurryApp fx
     f'        = atom f
     xs'       = align $ sep $ map atom xs
-  in align $ f' <+> xs'
+  in group $ nest 2 (f' <$> xs')
   where
     uncurryApp fx = uncons $ reverse $ unpack fx
       where
