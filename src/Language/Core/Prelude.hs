@@ -6,6 +6,7 @@ module Language.Core.Prelude where
 import Language.Core.ADT
 import Language.Core.DSL
 
+{-
 preludeDefs :: CoreProgram
 preludeDefs = [
     ("I", ["x"], EVar "x")
@@ -15,3 +16,4 @@ preludeDefs = [
   , ("compose", ["f", "g", "x"], [coreTH|f (g x)|])
   , ("twice", ["f", "g", "x"], [coreTH|compose f f|])
   ]
+-}

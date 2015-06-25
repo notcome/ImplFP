@@ -3,10 +3,9 @@
 
 module Language.Core.Parser where
 
-import Data.Maybe                   (isJust)
-import Text.Parsec                  ((<|>))
-import Text.Parsec.Prim             (getPosition)
+import Control.Applicative
 
+import Text.Parsec.Prim             (getPosition)
 import Control.Monad.State
 
 import qualified Text.Parsec        as P
@@ -14,139 +13,95 @@ import qualified Text.Parsec.Indent as PI
 
 import Language.Core.ADT
 
-type IParser a = P.ParsecT String () (State P.SourcePos) a
+import Debug.Trace
 
-iparse :: IParser a -> String -> Either P.ParseError a
-iparse rule text = PI.runIndent "(source)" $ P.runParserT rule () "(source)" text
+type IndentParser a = P.ParsecT String () (State P.SourcePos) a
 
-parse rule text = P.parse rule "(source)" text
+indentParse' :: String -> IndentParser a -> String -> Either P.ParseError a
+indentParse' src rule text = PI.runIndent src $ P.runParserT rule () src text
 
-{-
- - Atoms = EVar Name
- -       | ENum Int
- -       | ECon Int Int
- -}
+indentParse = indentParse' "snippet"
+parseCore   = indentParse core
 
 var = EVar <$> lowers
+num = ENum <$> ((P.char '-' *> liftA negate posnum) <|> posnum)
+con = P.string "Pack" *> braces pair
+  where pair = liftA2 ECon posnum $ keyword "," *> posnum
 
-num = do neg <- P.optionMaybe $ P.char '-'
-         num <- parseNum
-         return $ ENum $ case neg of
-                           Nothing -> num
-                           Just _  -> -num
+app = do
+  a <- withPos $ liftA2 (foldl EApp) atomicCore args
+  b <- args
+  trace (show $ length b) $ return a
+  where args = P.endBy (indented *> atomicCore) P.spaces
 
-con = do P.string "Pack{" >> spaces
-         id    <- parseNum
-         spaces >> P.char ',' >> spaces
-         arity <- parseNum
-         spaces >> P.char '}'
-         return $ ECon id arity
-
-{-
- - Complex = EApp (Expr a) (Expr a)
- -         | ELet
- -             IsRec
- -             [(a, Expr a)]
- -             (Expr a)
- -         | ECase
- -             (Expr a)
- -             [Alter a]
- -}
-
-biAp f o a b = f a `o` f b
-
-checkBlock = do
-  s <- get
-  p <- getPosition
-  if biAp P.sourceColumn (<) s p
-    then return ()
-    else fail "out of current block"
-
-app = PI.withPos $ do
-  fn <- atomicCore
-  P.spaces
-  args <- P.endBy (checkBlock >> atomicCore) (P.spaces)
-  case args of
-    [] -> return fn
-    _  -> return $ foldl EApp fn args
-
-letBlock = PI.withPos $ do
-    (isRec, defs) <- letDefs
-    value         <- PI.checkIndent >> letValue
-    return $ ELet isRec defs value
+letBlock = withPos $ liftA3 ELet isRec defs val
   where
-    letSym = do
-      symbol <- P.string "letrec" <|> P.string "let"
-      P.spaces
-      if symbol == "let"
-      then return False
-      else return True
-    letDef = do
-      bind  <- lowers
-      P.spaces >> P.char '=' >> P.spaces
-      value <- core
-      return (bind, value)
-    letDefs = PI.withBlock (,) letSym letDef
-    letValue = P.string "in" >> P.spaces >> core
+    construct (rec, defs) val = ELet rec defs val
+    isRec = P.string "letrec" *> return True
+        <|> P.string "let"    *> return False
+    def   = liftA2 (,) lowers $ keyword "=" *> core
+    defs  = P.many1 $ indented *> def
+    val   = keyword "in" *> core
 
-caseBlock = PI.withBlock ECase caseExpr caseBranch
+caseBlock = withPos $ liftA2 ECase expr branches
   where
-    caseExpr = do P.try $ P.string "case" >> P.spaces
-                  expr <- atomicCore
-                  P.spaces >> P.string "of" >> P.spaces
-                  return expr
-
-    caseBranch = do
-      id    <- parseNum
-      spaces
-      binds <- P.endBy lowers spaces
-      spaces >> P.string "->" >> spaces
-      expr  <- core
-      P.spaces
-      return (id, binds, expr)
+    expr   = P.between (keyword "case") (keyword "of") atomicCore
+    branch = liftA3 (,,) (angles posnum)
+                         (spaces *> P.endBy lowers spaces)
+                         (keyword "->" *> core)
+    branches = P.many1 $ indented *> branch <* P.spaces
 
 -- Main
-atom = do P.char '(' >> spaces
-          expr <- core
-          spaces >> P.char ')'
-          return expr
-
+atom = parens core
 atomicCore = choiceWithPos [atom, con, var, num]
 core       = choiceWithPos [ caseBlock
                            , letBlock
                            , app
                            ]
 
--- Fix "bugs"
-choiceWithPos ps = do
-  a <- get
-  let ps' = map (put a >>) ps
-  P.choice ps'
+-- Indent-Sensitive Parsec
+withPos  = PI.withPos
+indented = do
+  ref <- P.sourceColumn <$> get
+  col <- P.sourceColumn <$> getPosition
+  if ref < col
+  then do
+    trace (show ref ++ " ok " ++ show col) $ return ()
+   --return ()
+  else do
+    trace (show ref ++ " failed " ++ show col) $ fail "out of current block"
+same     = PI.same
+choiceWithPos ps = get >>= (\ref -> P.choice $ map (put ref >>) ps)
+--choiceWithPos ps = get >>= choice . flip map ps . (>>) . put
 
 -- Utilities
 lowers = P.many1 P.lower
 spaces = P.many $ P.char ' '
-parseNum = readNum <$> P.many1 P.digit
-  where readNum x = (read x) :: Int
+posnum = (read :: String -> Int) <$> P.many1 P.digit
+
+braces p = P.char '{' *> p <* P.char '}'
+angles p = P.char '<' *> p <* P.char '>'
+parens p = P.char '(' *> p <* P.char ')'
+keyword s = P.spaces *> P.string s <* P.spaces
 
 -- Test Cases
-lenCore = iparse caseBlock $ unlines [
+lenCore = parseCore $ unlines [
     "case l of"
-  , "  0 x xs -> add 1 (length xs)"
-  , "  1 -> 0"]
+  , "  <0> x xs -> add 1 (length xs)"
+  , "  <1> -> 0"]
 
-doubleA = iparse letBlock $ unlines [
+doubleA = parseCore $ unlines [
     "let a = 3"
   , "in add a a"
   ]
 
-bAndC = iparse letBlock $ unlines [
+bAndC = parseCore $ unlines [
     "let a = let b = 3"
   , "            c = 4"
   , "        in add b c"
   , "in add a a"]
 
-letRecAdd = iparse letBlock $ unlines [
+letRecAdd = parseCore $ unlines [
     "letrec a = add b c"
   , "       b = 3"
   , "       c = 4"
